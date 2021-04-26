@@ -32,20 +32,20 @@ import qualified Prelude              as P
 import           Text.Printf          (printf)
 
 data VestingDatum = VestingDatum
-    { beneficiary1 :: PubKeyHash
-    , beneficiary2 :: PubKeyHash
+    { beneficiary :: PubKeyHash
+    , initiator :: PubKeyHash
     , deadline     :: Slot
     } deriving Show
 
 PlutusTx.unstableMakeIsData ''VestingDatum
 
 {-# INLINABLE mkValidator #-}
--- This should validate if either beneficiary1 has signed the transaction and the current slot is before or at the deadline
--- or if beneficiary2 has signed the transaction and the deadline has passed.
+-- This should validate if either beneficiary has signed the transaction and the current slot is before or at the deadline
+-- or if initiator has signed the transaction and the deadline has passed.
 mkValidator :: VestingDatum -> () -> ScriptContext -> Bool
 mkValidator dat () ctx = 
-    ((checkSig $ beneficiary1 dat) && not deadlinePassed) ||     
-    ((checkSig $ beneficiary2 dat) && deadlinePassed)
+    ((checkSig $ beneficiary dat) && not deadlinePassed) ||     
+    ((checkSig $ initiator dat) && deadlinePassed)
   where
     info :: TxInfo
     info = scriptContextTxInfo ctx
@@ -55,7 +55,7 @@ mkValidator dat () ctx =
 
     deadlinePassed :: Bool
     deadlinePassed = from (deadline dat) `contains` txInfoValidRange info
-
+                     
 
 data Vesting
 instance Scripts.ScriptType Vesting where
@@ -90,8 +90,8 @@ give :: (HasBlockchainActions s, AsContractError e) => GiveParams -> Contract w 
 give gp = do
     pkh <- pubKeyHash <$> ownPubKey
     let dat = VestingDatum
-                { beneficiary1 = gpBeneficiary gp
-                , beneficiary2 = pkh
+                { beneficiary = gpBeneficiary gp
+                , initiator = pkh
                 , deadline     = gpDeadline gp
                 }
         tx  = mustPayToTheScript dat $ Ada.lovelaceValueOf $ gpAmount gp
@@ -107,8 +107,8 @@ grab = do
     now    <- currentSlot
     pkh    <- pubKeyHash <$> ownPubKey
     utxos  <- utxoAt scrAddress
-    let utxos1 = Map.filter (isSuitable $ \dat -> beneficiary1 dat == pkh && now <= deadline dat) utxos
-        utxos2 = Map.filter (isSuitable $ \dat -> beneficiary2 dat == pkh && now >  deadline dat) utxos
+    let utxos1 = Map.filter (isSuitable $ \dat -> beneficiary dat == pkh && now <= deadline dat) utxos
+        utxos2 = Map.filter (isSuitable $ \dat -> initiator dat == pkh && now >  deadline dat) utxos
     logInfo @String $ printf "found %d gift(s) to grab" (Map.size utxos1 P.+ Map.size utxos2)
     unless (Map.null utxos1) $ do
         let orefs   = fst <$> Map.toList utxos1
