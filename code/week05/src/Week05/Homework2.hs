@@ -35,7 +35,19 @@ import           Wallet.Emulator.Wallet
 -- Minting policy for an NFT, where the minting transaction must consume the given UTxO as input
 -- and where the TokenName will be the empty ByteString.
 mkPolicy :: TxOutRef -> ScriptContext -> Bool
-mkPolicy oref ctx = True -- FIX ME!
+mkPolicy oref ctx = traceIfFalse "UTxO not consumed"   hasUTxO           &&
+                    traceIfFalse "wrong amount minted" checkMintedAmount
+  where
+    info :: TxInfo
+    info = scriptContextTxInfo ctx
+
+    hasUTxO :: Bool
+    hasUTxO = any (\i -> txInInfoOutRef i == oref) $ txInfoInputs info
+
+    checkMintedAmount :: Bool
+    checkMintedAmount = case flattenValue (txInfoForge info) of
+        [(cs, tn', amt)] -> cs  == ownCurrencySymbol ctx && tn' == tn && amt == 1
+        _                -> False
 
 policy :: TxOutRef -> Scripts.MonetaryPolicy
 policy oref = undefined -- IMPLEMENT ME!
